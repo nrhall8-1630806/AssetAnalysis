@@ -1,0 +1,382 @@
+---
+title: "Econ 424 Lab 5, Winter 2020"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+# Introduction
+
+In this lab, you will estimate the CER model for the monthly return data on five Northwest stocks in the **IntroCompFin** package: Amazon (amzn), Boeing (ba), Costco (cost), Nordstrom (jwn), and Starbucks (sbux).  I encourage you to go to https://finance.yahoo.com and research these stocks. This notebook walks you through all of the computations for the lab. You will use the following R packages
+
+* **IntroCompFinR**
+* **PerformanceAnalytics package**.
+* **zoo**
+* **xts**
+
+Make sure to install these packages before you load them into R. As in the previous labs, use this notebook to answer all questions. Insert R chunks where needed. I will provide code hints below. 
+
+## Reading
+
+* Zivot, chapters 6 (CER Model) and 7 (CER Model Estimation) 
+
+# Load packages and set options
+
+```{r}
+library(IntroCompFinR)
+library(corrplot)
+library(PerformanceAnalytics)
+library(xts)
+options(digits = 3)
+Sys.setenv(TZ="UTC")
+```
+
+
+# Loading data and computing returns
+
+Load the daily price data from **IntroCompFinR**, and create monthly returns over the period Jan 1998 through Dec 2014:
+
+```{r}
+data(amznDailyPrices, baDailyPrices, costDailyPrices, jwnDailyPrices, sbuxDailyPrices)
+fiveStocks = merge(amznDailyPrices, baDailyPrices, costDailyPrices, jwnDailyPrices, sbuxDailyPrices)
+fiveStocks = to.monthly(fiveStocks, OHLC=FALSE)
+```
+
+Let's look at the data
+
+```{r}
+head(fiveStocks, n=3)
+```
+
+```{r}
+tail(fiveStocks, n=3)
+```
+
+Next, let's compute monthly continuously compounded returns using the **PerformanceAnalytics** function `Return.Calculate()`
+
+```{r}
+fiveStocksRet = na.omit(Return.calculate(fiveStocks, method = "log"))
+head(fiveStocksRet, n=3)
+```
+
+We removed the missing January return using the function `na.omit()`.
+
+# Part I: CER Model Estimation
+
+Consider the CER Model for cc returns
+
+\begin{align}
+R_{it} & = \mu_i + \epsilon_{it}, t=1,\cdots,T \\
+\epsilon_{it} & \sim \text{iid } N(0, \sigma_{i}^{2}) \\
+\mathrm{cov}(R_{it}, R_{jt}) & = \sigma_{i,j} \\
+\mathrm{cov}(R_{it}, R_{js}) & = 0 \text{ for } s \ne t
+\end{align}
+
+where $R_{it}$ denotes the cc return on asset $i$ ($i=\mathrm{AMZN}, \cdots, \mathrm{SBUX}$).
+
+1. Using sample descriptive statistics, give estimates for the model parameters $\mu_i, \sigma_{i}^{2}, \sigma_i, \sigma_{i,j}, \rho_{i,j}$.
+
+```{r}
+muhat = apply(fiveStocksRet,2,mean) 
+sigma2hat = apply(fiveStocksRet,2,var)
+sigmahat = apply(fiveStocksRet,2,sd) 
+covmat = var(fiveStocksRet)
+cormat = cor(fiveStocksRet)
+```
+
+Mean:
+```{r}
+muhat
+```
+
+Variance:
+```{r}
+sigma2hat
+```
+
+Volatility/SD:
+```{r}
+sigmahat
+```
+
+Covariance:
+```{r}
+covmat
+```
+
+
+Correlation:
+```{r}
+cormat
+```
+
+
+2. For each estimate of the above parameters (except $\sigma_{i,j}$) compute the estimated standard error. That is, compute $\widehat{\mathrm{SE}}(\hat{\mu}_{i})$, $\widehat{\mathrm{SE}}(\hat{\sigma}_{i}^{2})$, $\widehat{\mathrm{SE}}(\hat{\sigma}_{i})$, and $\widehat{\mathrm{SE}}(\hat{\rho}_{ij})$. Briefly comment on the precision of the estimates. Hint: the formulas for these standard errors were given in class, and are given in the lecture notes on the constant expected return model.
+
+###SE for Means:
+```{r}
+n.obs = nrow(fiveStocksRet)
+seMuhat = sigmahat/n.obs
+se_means = cbind(muhat,seMuhat)
+se_means
+```
+Since the SE values of the Mu's are small compared to the estimated values, we can conclude that these estimates are good measures and close to the actual value.
+
+###SE for Variances and Standard Deviations:
+```{r}
+seSigma2hat = sigma2hat/sqrt(n.obs/2)
+seSigmahat = sigmahat/sqrt(2*n.obs)
+se_var_sd = cbind(sigma2hat,seSigma2hat,sigmahat,seSigmahat)
+se_var_sd
+```
+Seeing that these SE values of the standard deviation and variance are small, we can also conclude that these estimated values are good measures for the model.
+
+###SE for Covariance
+```{r}
+covhat = covmat[lower.tri(covmat)]
+names(covhat) <- c('AMZN, BA', 'AMZN,COST','AMZN,JWN','AMZN,SBUX','BA,COST','BA,JWN','BA,SBUX',
+'COST,JWN','COST,SBUX','JWN,SBUX')
+covhat
+```
+
+
+###SE for Correlation
+```{r}
+rhohat = cormat[lower.tri(cormat)]
+names(rhohat) <- c('AMZN, BA', 'AMZN,COST','AMZN,JWN','AMZN,SBUX','BA,COST','BA,JWN','BA,SBUX',
+'COST,JWN','COST,SBUX','JWN,SBUX')
+seRhohat = (1-rhohat^2)/sqrt(n.obs)
+cbind(rhohat,seRhohat)
+```
+Again the SE values are small compared to the estimated value so the estimated correlations are close to the actual.
+
+
+3. For each parameter $\mu_i, \sigma_{i}^{2}, \sigma_i, \sigma_{i,j}, \rho_{i,j}$ compute 95% and 99% confidence intervals. Briefly comment on the width of these intervals.
+
+###CI for Mean, 95%
+```{r}
+lowerMu_95=muhat - 2*seMuhat
+upperMu_95=muhat + 2*seMuhat
+widthMu_95 = upperMu_95 - lowerMu_95
+cbind(lowerMu_95,upperMu_95,widthMu_95)
+```
+
+###CI for Mean, 99%
+```{r}
+lowerMu_99=muhat - 3*seMuhat
+upperMu_99=muhat + 3*seMuhat
+widthMu_99 = upperMu_99 - lowerMu_99
+cbind(lowerMu_99,upperMu_99,widthMu_99)
+```
+
+Looking at the CI widths, the smallest is Costco, while the largest is Amazon. Although, both are relatively small implying precise estimates for the estimated mean. Amazon being a higher growth stock puts it at risk of higher volatility which is most likely the reason for the higher CI width.
+
+###CI for Variance, 95%
+```{r}
+lowerSigma2_95 = sigma2hat - 2*seSigma2hat
+upperSigma2_95 = sigma2hat + 2*seSigma2hat
+widthSigma2_95 = upperSigma2_95 - lowerSigma2_95
+cbind(lowerSigma2_95, upperSigma2_95, widthSigma2_95)
+```
+
+###CI for Variance, 99%
+```{r}
+lowerSigma2_99 = sigma2hat - 3*seSigma2hat
+upperSigma2_99 = sigma2hat + 3*seSigma2hat
+widthSigma2_99 = upperSigma2_99 - lowerSigma2_99
+cbind(lowerSigma2_99, upperSigma2_99, widthSigma2_99)
+```
+
+Amazon again has the largest CI width with its estimated variance being much higher than the other assets. Amazon has that higher possible growth but also comes with that higher variance, so the estimates are less precise.
+
+###CI for Standard Deviation, 95%
+```{r}
+lowerSigma_95 = sigmahat - 2*seSigmahat
+upperSigma_95 = sigmahat + 2*seSigmahat
+widthSigma_95 = upperSigma_95 - lowerSigma_95
+cbind(lowerSigma_95, upperSigma_95, widthSigma_95)
+```
+
+###CI for Standard Deviation, 99%
+```{r}
+lowerSigma_99 = sigmahat - 3*seSigmahat
+upperSigma_99 = sigmahat + 3*seSigmahat
+widthSigma_99 = upperSigma_99 - lowerSigma_99
+cbind(lowerSigma_99, upperSigma_99, widthSigma_99)
+```
+
+This gives us pretty much the same information as variance did.
+
+###CI for Correlation, 95%
+```{r}
+lowerRho_95 = rhohat - 2*seRhohat
+upperRho_95 = rhohat + 2*seRhohat
+widthRho_95 = upperRho_95 - lowerRho_95
+cbind(lowerRho_95, upperRho_95, widthRho_95)
+```
+
+###CI for Correlation, 99%
+```{r}
+lowerRho_99 = rhohat - 3*seRhohat
+upperRho_99 = rhohat + 3*seRhohat
+widthRho_99 = upperRho_99 - lowerRho_99
+cbind(lowerRho_99, upperRho_99, widthRho_99)
+```
+The CI's for all assets are tightly grouped together but the widths are larger than the other CI's widths. The estimates for correlation are moderately precise but not as precise as the other tests.
+
+
+
+4. Using the estimated values of $\mu_i$ and $\sigma_i$ for each stock, compute the normal distribution 1% and 5% monthly value-at-Risk (VaR) based on an initial $100,000 investment. Compare these values with the historical VaR values computed from the empirical quantiles. •	Hint: remember that we are using continuously compounded returns.
+
+```{r}
+W = 100000
+amzn_var_1 = qnorm(.01, mean = muhat[1], sd = sigmahat[1])
+amzn_var_5 = qnorm(.05, mean = muhat[1], sd = sigmahat[1])
+ba_var_1 = qnorm(.01, mean = muhat[2], sd = sigmahat[2])
+ba_var_5 = qnorm(.05, mean = muhat[2], sd = sigmahat[2])
+cost_var_1 = qnorm(.01, mean = muhat[3], sd = sigmahat[3])
+cost_var_5 = qnorm(.05, mean = muhat[3], sd = sigmahat[3])
+jwn_var_1 = qnorm(.01, mean = muhat[4], sd = sigmahat[4])
+jwn_var_5 = qnorm(.05, mean = muhat[4], sd = sigmahat[4])
+sbux_var_1 = qnorm(.01, mean = muhat[5], sd = sigmahat[5])
+sbux_var_5 = qnorm(.05, mean = muhat[5], sd = sigmahat[5])
+
+# AMZN VaR
+AMZN.Var1 =W * amzn_var_1
+AMZN.Var5 = W * amzn_var_5
+AMZN_Var = cbind(AMZN.Var1, AMZN.Var5)
+
+# BA VaR
+BA.Var1 =W * ba_var_1
+BA.Var5 = W * ba_var_5
+BA_Var = cbind(BA.Var1, BA.Var5)
+
+# COST VaR
+COST.Var1 =W * cost_var_1
+COST.Var5 = W * cost_var_5
+COST_Var = cbind(COST.Var1, COST.Var5)
+
+# JWN VaR
+JWN.Var1 =W * jwn_var_1
+JWN.Var5 = W * jwn_var_5
+JWN_Var = cbind(JWN.Var1, JWN.Var5)
+
+# SBUX VaR
+SBUX.Var1 =W * sbux_var_1
+SBUX.Var5 = W * sbux_var_5
+SBUX_Var = cbind(SBUX.Var1, SBUX.Var5)
+est_var_final = cbind(AMZN_Var,BA_Var,COST_Var,JWN_Var,SBUX_Var)
+est_var_final
+```
+
+```{r}
+amzn_quant = quantile(fiveStocksRet[,'AMZN'],probs=c(.01,.05))
+ba_quant = quantile(fiveStocksRet[,'BA'],probs=c(.01,.05))
+cost_quant = quantile(fiveStocksRet[,'COST'],probs=c(.01,.05))
+jwn_quant = quantile(fiveStocksRet[,'JWN'],probs=c(.01,.05))
+sbux_quant = quantile(fiveStocksRet[,'SBUX'],probs=c(.01,.05))
+VaR.values = cbind(amzn_quant,ba_quant,cost_quant,jwn_quant,sbux_quant)
+hist_var_final = W*(exp(VaR.values)-1)
+colnames(hist_var_final) <- c('AMZN', 'BA','COST','JWN','SBUX')
+hist_var_final
+```
+
+Looking at the VaR with estimated values vs historic VaR, you can see that the esimated measures are calculating Amazon and Costco to have more VaR, while the other assets are showing the opposite relationship.
+
+# Part II: Monte Carlo Simulation in the CER Model
+
+Using the technique of Monte Carlo simulation, create $1000$ simulated data sets of size $T = 60$ from the CER model using as true parameters the estimated parameters for AMZN: $\hat{\mu} = 0.0204$, $\hat{\sigma}^2 = 0.0281$, and $\hat{\sigma} = 0.168$.  Use `set.seed(123)` to initialize the random number generator. For each of the $1000$ data sets, compute $\hat{\mu}$, $\hat{\sigma^2}$ and $\hat{\sigma}$ using the R functions `mean()` and `var()` and `sd()`.
+
+```{r}
+mu = 0.0204
+sigma = 0.168
+n.sim = 1000
+n.obs = 60
+set.seed(123)
+sim.means = rep(0,n.sim) # initialize vectors
+sim.var = rep(0,n.sim)
+sim.sd = rep(0,n.sim)
+mu.lower = rep(0,n.sim)
+mu.upper = rep(0,n.sim)
+qt.975 = qt(0.975, n.obs-1)
+for (sim in 1:n.sim) {
+  sim.ret = rnorm(n.obs,mean=mu,sd=sigma)
+  sim.means[sim] = mean(sim.ret)
+  sim.var[sim] = var(sim.ret)
+  sim.sd[sim] = sd(sim.ret)
+  se.muhat = sd(sim.ret)/sqrt(n.obs)
+  mu.lower[sim] = sim.means[sim]-qt.975*se.muhat
+  mu.upper[sim] = sim.means[sim]+qt.975*se.muhat
+}
+```
+
+
+1. Create histograms for the 1000 values of $\hat{\mu}$, $\hat{\sigma}^2$, and $\hat{\sigma}$ . Are the centers of these histograms close to the true values $\hat{\mu} = 0.0204$, $\hat{\sigma}^2 = 0.0281$, and $\hat{\sigma} = 0.168$? Do the distributions look normal?
+
+###Histogram of Means
+```{r}
+hist(sim.means, col="cornflowerblue", ylim=c(0,20),
+main="Estimated Means", xlab="muhat", probability=TRUE)
+abline(v=mean(sim.means), col="white", lwd=4, lty=2)
+x.vals = seq(-0.04, 0.08, length=100)
+lines(x.vals, dnorm(x.vals, mean=mu, sd=sigma/sqrt(60)), col="orange", lwd=2)
+```
+
+###Histogram of Variance
+```{r}
+hist(sim.var, col="cornflowerblue", ylim=c(0,120),
+main="Estimated Variance", xlab="sigma.sq", probability=TRUE)
+abline(v=mean(sim.var), col="white", lwd=4, lty=2)
+x.vals = seq(0.01, 0.05, length=100)
+lines(x.vals, dnorm(x.vals, mean=sigma**2, sd=(sigma^2)/sqrt(30)), col="orange", lwd=2)
+```
+
+###Histogram of Standard Deviation
+```{r}
+hist(sim.sd, col="cornflowerblue", ylim=c(0,30),
+main="Estimated SD", xlab="sigma", probability=TRUE)
+abline(v=mean(sim.sd), col="white", lwd=4, lty=2)
+x.vals = seq(0.12, 0.220, length=100)
+lines(x.vals, dnorm(x.vals, mean=sigma, sd=sigma/sqrt(120)), col="orange", lwd=2)
+```
+All the histograms seem to be centered around the true values and all seem to be noramlly distributed.
+
+
+2. Compute the average and standard deviation of $\hat{\mu}$, $\hat{\sigma}^2$, and $\hat{\sigma}$ across the $1000$ simulated samples. How close are the Monte Carlo averages of $\hat{\mu}$, $\hat{\sigma}^2$, and $\hat{\sigma}$ to their true values? How close are the Monte Carlo standard deviations to the analytic standard error estimates of $\hat{\mu}$, $\hat{\sigma}^2$, and $\hat{\sigma}$ computed from the actual data from Part I question 2 above? 
+
+###Estimated Values
+```{r}
+sim_muhat = mean(sim.means)
+sim_sigma2hat = mean(sim.var)
+sim_sigmahat = mean(sim.sd)
+sim_muhat
+sim_sigma2hat
+sim_sigmahat
+```
+
+###Difference in values
+```{r}
+diff_mu = mu - sim_muhat
+diff_var = (sigma**2) - sim_sigma2hat
+diff_sd =sigma - sim_sigmahat
+diff_mu
+diff_var
+diff_sd
+```
+
+The simulated values have very minute differences from the actual values, especially for the mean.
+
+###Standard Errors
+```{r}
+sim_se_mean = sd(sim.means)
+sim_se_sigma2hat = sd(sim.var)
+sim_se_sigmahat = sd(sim.sd)
+
+cbind(se_means,sim_se_mean)
+
+cbind(se_var_sd, sim_se_sigma2hat,sim_se_sigmahat)
+```
+
+The SE for the Monte Carlo sim are quite small, but still slightly larger than the SE from the historic data. This can be explained by the historical data having more available data than the 1000 simulated values.
