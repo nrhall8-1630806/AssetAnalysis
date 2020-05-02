@@ -16,5 +16,5 @@ Homework 3.pdf:
 Homework 4.pdf:
   Computed descriptive statistics and stylized facts for 5 Northwest stocks.
   
-Project in notebook.pdf: 
-  Looked at different Vangaurd mutual funds and ran different analyses on their performances from November 2014 - November 2019
+Project in notebook.pdf: tt
+  Looked at different Vangaurd mutual funds and ran different analyses on their performances from November 2014 - November 2019. These analyses included individual asset analyses, projected returns using the bootstrap technique, checking the asset correlations, determining their values at risk and crafting 
